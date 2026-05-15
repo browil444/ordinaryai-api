@@ -37,8 +37,8 @@ export default async function handler(req, res) {
     frequency_penalty: 0,
     max_tokens: 4000,
     presence_penalty: 0,
-    stream: false,
-    temperature: 0.7,
+    stream: true,
+    temperature: 0.5,
     top_p: 0.95,
   };
 
@@ -54,7 +54,7 @@ export default async function handler(req, res) {
         "x-device-platform": "web",
         "x-device-version": "1.0.44",
         "user-agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Mobile Safari/537.36",
-        accept: "application/json",
+        accept: "*/*",
         "content-type": "application/json",
         origin: "https://overchat.ai",
         referer: "https://overchat.ai/",
@@ -69,16 +69,42 @@ export default async function handler(req, res) {
       return res.status(502).json({ error: "Upstream error", detail: text.slice(0, 500) });
     }
 
-    const data = await upstream.json();
-    const content = data?.choices?.[0]?.message?.content;
+    // Parse SSE stream seperti gist kamu
+    const reader = upstream.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let answer = "";
+    let model = null;
 
-    if (!content) {
-      return res.status(502).json({ error: "No content in response", raw: JSON.stringify(data).slice(0, 500) });
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (!data || data === "[DONE]") continue;
+        try {
+          const json = JSON.parse(data);
+          if (json.model) model = json.model;
+          const content = json.choices?.[0]?.delta?.content;
+          if (typeof content === "string") answer += content;
+        } catch {}
+      }
+    }
+
+    if (!answer) {
+      return res.status(502).json({ error: "No answer from upstream" });
     }
 
     return res.status(200).json({
-      choices: [{ message: { role: "assistant", content } }],
-      model: "gpt-4o",
+      choices: [{ message: { role: "assistant", content: answer } }],
+      model: model || "gpt-4o",
     });
   } catch (e) {
     return res.status(500).json({ error: e.message });
