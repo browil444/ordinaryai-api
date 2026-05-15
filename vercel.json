@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "functions": {
+    "api/epic.js": { "maxDuration": 30 },
+    "api/legend.js": { "maxDuration": 30 },
+    "api/mythic.js": { "maxDuration": 60 }
+  }
+}
