@@ -1,17 +1,60 @@
 import crypto from "node:crypto";
 
-const API = "https://app.unlimitedai.chat/api/chat";
+const BASE = "https://notegpt.io";
+const UA = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Mobile Safari/537.36";
 
-function makeIndonesianPrompt(text) {
-  return `Kamu wajib menjawab hanya dalam bahasa Indonesia.\nAbaikan bahasa dari pertanyaan user.\nTerjemahkan maksud user bila perlu, lalu jawab dalam bahasa Indonesia.\nDilarang menjawab dalam bahasa Jerman, Inggris, Spanyol, Prancis, atau bahasa lain.\n\nPertanyaan:\n${text}`.trim();
+function uuid() {
+  return crypto.randomUUID();
 }
 
-function buildCookie(deviceId, chatId) {
+function randomNumber(length = 10) {
+  let result = "";
+  for (let i = 0; i < length; i++) result += Math.floor(Math.random() * 10);
+  return result;
+}
+
+function makeSboxGuid() {
+  const now = Math.floor(Date.now() / 1000);
+  const raw = `${now}|762|${randomNumber(9)}`;
+  return Buffer.from(raw).toString("base64");
+}
+
+function makeCookieHeader() {
+  const now = Math.floor(Date.now() / 1000);
+  const anonymousUserId = uuid();
   return [
-    `NEXT_LOCALE=id`,
-    `u_device_id=${deviceId}`,
-    `home_chat_id=${chatId}`,
+    `_ga_PFX3BRW5RQ=GS2.1.s${now}$o1$g0$t${now}$j60$l0$h${randomNumber(9)}`,
+    `_ga=GA1.2.${randomNumber(9)}.${now}`,
+    `_gid=GA1.2.${randomNumber(9)}.${now}`,
+    `_gat_gtag_UA_252982427_14=1`,
+    `sbox-guid=${encodeURIComponent(makeSboxGuid())}`,
+    `anonymous_user_id=${anonymousUserId}`,
   ].join("; ");
+}
+
+function toHistoryMessages(history) {
+  return history.slice(-5).flatMap((item) => [
+    { role: "user", content: item.user },
+    { role: "assistant", content: item.assistant },
+  ]);
+}
+
+function parseSSE(rawBody) {
+  let answer = "";
+  let reasoning = "";
+  for (const line of rawBody.split(/\r?\n/)) {
+    const clean = line.trim();
+    if (!clean.startsWith("data:")) continue;
+    const raw = clean.replace(/^data:\s*/, "").trim();
+    if (!raw || raw === "[DONE]") continue;
+    try {
+      const json = JSON.parse(raw);
+      if (json.reasoning) reasoning += json.reasoning;
+      if (json.text) answer += json.text;
+      if (json.done) break;
+    } catch {}
+  }
+  return { answer, reasoning };
 }
 
 export default async function handler(req, res) {
@@ -26,110 +69,67 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "messages array required" });
   }
 
-  const chatId = crypto.randomUUID();
-  const deviceId = crypto.randomUUID();
-  const createdAt = new Date().toISOString();
-
+  // Build history pairs dari messages
+  const history = [];
+  for (let i = 0; i + 1 < messages.length; i += 2) {
+    if (messages[i]?.role === "user" && messages[i + 1]?.role === "assistant") {
+      history.push({ user: messages[i].content, assistant: messages[i + 1].content });
+    }
+  }
   const lastMsg = messages[messages.length - 1];
-  const prompt = system
-    ? `${system}\n\n${lastMsg?.content || ""}`
-    : makeIndonesianPrompt(lastMsg?.content || "");
+  const prompt = lastMsg?.content || "";
 
-  const userMessageId = crypto.randomUUID();
-  const assistantMessageId = crypto.randomUUID();
+  const conversationId = uuid();
+  const cookieHeader = makeCookieHeader();
 
-  const userMessage = {
-    id: userMessageId,
-    role: "user",
-    content: prompt,
-    parts: [{ type: "text", text: prompt }],
-    createdAt,
-  };
-
-  const assistantPlaceholder = {
-    id: assistantMessageId,
-    role: "assistant",
-    content: "",
-    parts: [{ type: "text", text: "" }],
-    createdAt,
-  };
-
-  // Build prior messages (exclude last user)
-  const priorMessages = messages.slice(0, -1).map((m) => ({
-    id: crypto.randomUUID(),
-    role: m.role,
-    content: m.content,
-    parts: [{ type: "text", text: m.content }],
-    createdAt,
-  }));
-
-  const messagesToSend = [...priorMessages, userMessage, assistantPlaceholder];
-
-  const body = {
-    chatId,
-    messages: messagesToSend,
-    selectedChatModel: "chat-model-reasoning",
-    selectedCharacter: null,
-    selectedStory: null,
-    deviceId,
-    locale: "id",
+  const payload = {
+    message: prompt,
+    language: "auto",
+    model: "deepseek-v4-flash",
+    tone: "default",
+    length: "moderate",
+    conversation_id: conversationId,
+    image_urls: [],
+    history_messages: toHistoryMessages(history),
+    chat_mode: "deep_think",
   };
 
   try {
-    const upstream = await fetch(API, {
+    const upstream = await fetch(`${BASE}/api/v2/chat/stream`, {
       method: "POST",
       headers: {
         "sec-ch-ua-platform": `"Android"`,
-        "user-agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Mobile Safari/537.36",
+        "User-Agent": UA,
         "sec-ch-ua": `"Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"`,
-        "content-type": "application/json",
+        "Content-Type": "application/json",
         "sec-ch-ua-mobile": "?1",
-        "x-next-intl-locale": "id",
-        accept: "*/*",
-        origin: "https://app.unlimitedai.chat",
-        referer: "https://app.unlimitedai.chat/id",
-        "accept-language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
-        cookie: buildCookie(deviceId, chatId),
+        Accept: "*/*",
+        Origin: BASE,
+        "sec-fetch-site": "same-origin",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-dest": "empty",
+        Referer: `${BASE}/chat-deepseek`,
+        "Accept-Encoding": "gzip, deflate, br, zstd",
+        "Accept-Language": "id-ID,id;q=0.9",
+        Cookie: cookieHeader,
         priority: "u=1, i",
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(payload),
     });
 
-    if (!upstream.ok) {
-      const text = await upstream.text();
-      return res.status(502).json({ error: "Upstream error", detail: text.slice(0, 500) });
+    const rawBody = await upstream.text();
+    const { answer, reasoning } = parseSSE(rawBody);
+
+    if (!answer && !reasoning) {
+      return res.status(502).json({ error: "No response from upstream", raw: rawBody.slice(0, 500) });
     }
 
-    const reader = upstream.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let answer = "";
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-      for (const rawLine of lines) {
-        const line = rawLine.trim();
-        if (!line) continue;
-        try {
-          const json = JSON.parse(line);
-          if (json.type === "delta" && typeof json.delta === "string") {
-            answer += json.delta;
-          }
-        } catch {}
-      }
-    }
-
-    if (!answer) {
-      return res.status(502).json({ error: "No answer from upstream" });
-    }
+    // Kalau ada reasoning, tampilkan sebagai bagian jawaban (opsional bisa dipisah)
+    const finalContent = answer || reasoning;
 
     return res.status(200).json({
-      choices: [{ message: { role: "assistant", content: answer } }],
-      model: "chat-model-reasoning",
+      choices: [{ message: { role: "assistant", content: finalContent } }],
+      model: "deepseek-v4-flash",
     });
   } catch (e) {
     return res.status(500).json({ error: e.message });
