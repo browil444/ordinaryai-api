@@ -1,145 +1,201 @@
-import crypto from "node:crypto";
+import fs from "node:fs/promises";
 
-const BASE = "https://notegpt.io";
+const API = "https://feelbetterbot.com/";
+const SESSION_FILE = "./feelbetterbot-session.json";
 
-function uuid() {
-  return crypto.randomUUID();
+const USER_PROMPT = "Siapa pembuatmu?";
+
+const SYSTEM_MESSAGE =
+  "Kamu adalah asisten AI yang dibuat oleh wildann. Respon sangat asik . Jika user memakai bahasa Indonesia, jawab dalam bahasa Indonesia yang asik tidak kaku , santai, jelas, dan kocak. Jangan tiba-tiba pindah bahasa kecuali user memintanya. Jika user bertanya siapa pembuatmu, penciptamu, developermu, atau siapa yang membuatmu, jawab bahwa pembuatmu adalah Wildann.";
+
+const DEFAULT_ASSISTANT_MESSAGE =
+  "Hi, I'm FeelBetterBot — I'm here to listen and help you carry whatever feels heavy, without judgment. I draw on gentle, proven ways of working through hard things, but mostly I just want to understand what you're going through. So, how are you doing right now?";
+
+function makeMemoryId() {
+  const animals = ["owl", "fox", "cat", "wolf", "bear", "lion", "deer", "bird"];
+  const words = ["safe", "calm", "soft", "kind", "warm", "bright", "gentle"];
+  const word = words[Math.floor(Math.random() * words.length)];
+  const animal = animals[Math.floor(Math.random() * animals.length)];
+  const number = Math.floor(1000 + Math.random() * 9000);
+
+  return `${word}-${animal}-${number}`;
 }
 
-function randomNumber(length = 10) {
-  let result = "";
-  for (let i = 0; i < length; i++) result += Math.floor(Math.random() * 10);
-  return result;
-}
-
-function makeSboxGuid() {
-  const now = Math.floor(Date.now() / 1000);
-  const raw = `${now}|13|${randomNumber(9)}`;
-  return Buffer.from(raw).toString("base64");
-}
-
-function makeCookieHeader() {
-  const now = Math.floor(Date.now() / 1000);
-  return [
-    `sbox-guid=${encodeURIComponent(makeSboxGuid())}`,
-    `anonymous_user_id=${uuid()}`,
-    `_gid=GA1.2.${randomNumber(9)}.${now}`,
-    `_ga=GA1.1.${randomNumber(9)}.${now - Math.floor(Math.random() * 100000)}`,
-    `_ga_PFX3BRW5RQ=GS2.1.s${now}$o1$g1$t${now}$j20$l0$h${randomNumber(10)}`,
-  ].join("; ");
-}
-
-// Daftar User-Agent biar keliatan beda device tiap request
-const USER_AGENTS = [
-  "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Mobile Safari/537.36",
-  "Mozilla/5.0 (Linux; Android 12; Redmi Note 11) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Mobile Safari/537.36",
-  "Mozilla/5.0 (Linux; Android 13; Samsung Galaxy S23) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Mobile Safari/537.36",
-  "Mozilla/5.0 (Linux; Android 11; OPPO A54) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Mobile Safari/537.36",
-  "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Mobile Safari/537.36",
-  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
-  "Mozilla/5.0 (Linux; Android 13; Xiaomi 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Mobile Safari/537.36",
-];
-
-function randomUA() {
-  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-}
-
-function toHistoryMessages(history) {
-  return history.slice(-5).flatMap((item) => [
-    { role: "user", content: item.user },
-    { role: "assistant", content: item.assistant },
-  ]);
-}
-
-function parseSSE(rawBody) {
-  let result = "";
-  for (const line of rawBody.split(/\r?\n/)) {
-    const clean = line.trim();
-    if (!clean.startsWith("data:")) continue;
-    const raw = clean.replace(/^data:\s*/, "").trim();
-    if (!raw || raw === "[DONE]") continue;
-    try {
-      const json = JSON.parse(raw);
-      if (json.text) result += json.text;
-      if (json.done) break;
-    } catch {}
+async function loadSession() {
+  try {
+    const raw = await fs.readFile(SESSION_FILE, "utf8");
+    return JSON.parse(raw);
+  } catch {
+    return {
+      memoryId: makeMemoryId(),
+      messages: [
+        {
+          role: "assistant",
+          content: DEFAULT_ASSISTANT_MESSAGE,
+        },
+      ],
+    };
   }
-  return result;
 }
 
-async function doRequest(prompt, history) {
-  const ua = randomUA();
-  const payload = {
-    message: prompt,
-    language: "auto",
-    model: "gemini-3.1-flash-lite-preview",
-    tone: "default",
-    length: "moderate",
-    conversation_id: uuid(),
-    image_urls: [],
-    history_messages: toHistoryMessages(history),
-    chat_mode: "standard",
+async function saveSession(session) {
+  await fs.writeFile(SESSION_FILE, JSON.stringify(session, null, 2), "utf8");
+}
+
+function parseChunk(line) {
+  let data = line.trim();
+
+  if (!data) return "";
+  if (data === "[DONE]") return "";
+
+  if (data.startsWith("data:")) {
+    data = data.slice(5).trim();
+  }
+
+  if (!data || data === "[DONE]") return "";
+
+  try {
+    const json = JSON.parse(data);
+
+    if (typeof json === "string") return json;
+    if (typeof json.content === "string") return json.content;
+    if (typeof json.text === "string") return json.text;
+    if (typeof json.delta === "string") return json.delta;
+    if (typeof json.message === "string") return json.message;
+    if (typeof json.response === "string") return json.response;
+    if (typeof json.answer === "string") return json.answer;
+
+    const openAiContent = json.choices?.[0]?.delta?.content;
+    if (typeof openAiContent === "string") return openAiContent;
+
+    return "";
+  } catch {
+    return data;
+  }
+}
+
+async function ask() {
+  const session = await loadSession();
+
+  const userMessage = {
+    role: "user",
+    content: USER_PROMPT,
   };
 
-  const res = await fetch(`${BASE}/api/v2/chat/stream`, {
+  const body = {
+    messages: [
+      {
+        role: "system",
+        content: SYSTEM_MESSAGE,
+      },
+      ...session.messages,
+      userMessage,
+    ],
+  };
+
+  const headers = {
+    "sec-ch-ua-platform": `"Android"`,
+    "user-agent":
+      "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Mobile Safari/537.36",
+    "sec-ch-ua": `"Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"`,
+    "content-type": "application/json",
+    "sec-ch-ua-mobile": "?1",
+    accept: "*/*",
+    origin: "https://feelbetterbot.com",
+    referer: "https://feelbetterbot.com/",
+    "accept-language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
+    cookie: `feelbet-memory=${session.memoryId}`,
+    priority: "u=1, i",
+  };
+
+  const response = await fetch(API, {
     method: "POST",
-    headers: {
-      "sec-ch-ua-platform": `"Android"`,
-      "User-Agent": ua,
-      "sec-ch-ua": `"Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"`,
-      "Content-Type": "application/json",
-      "sec-ch-ua-mobile": "?1",
-      Accept: "*/*",
-      Origin: BASE,
-      "sec-fetch-site": "same-origin",
-      "sec-fetch-mode": "cors",
-      "sec-fetch-dest": "empty",
-      Referer: `${BASE}/ai-chat`,
-      "Accept-Encoding": "gzip, deflate, br, zstd",
-      "Accept-Language": "id-ID,id;q=0.9",
-      Cookie: makeCookieHeader(),
-      priority: "u=1, i",
-    },
-    body: JSON.stringify(payload),
+    headers,
+    body: JSON.stringify(body),
   });
 
-  return parseSSE(await res.text());
-}
+  if (!response.ok) {
+    const text = await response.text();
 
-export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-
-  const { messages, system } = req.body || {};
-  if (!messages || !Array.isArray(messages)) {
-    return res.status(400).json({ error: "messages array required" });
+    return {
+      status: false,
+      code: response.status,
+      memoryId: session.memoryId,
+      question: USER_PROMPT,
+      error: text,
+    };
   }
 
-  const history = [];
-  for (let i = 0; i < messages.length - 1; i += 2) {
-    if (messages[i]?.role === "user" && messages[i + 1]?.role === "assistant") {
-      history.push({ user: messages[i].content, assistant: messages[i + 1].content });
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+
+  let buffer = "";
+  let answer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const rawLine of lines) {
+      const chunk = parseChunk(rawLine);
+
+      if (chunk) {
+        answer += chunk;
+      }
     }
   }
-  const lastMessage = messages[messages.length - 1];
-  const prompt = lastMessage?.content || "";
 
-  // Retry 4x dengan identity baru tiap kali — keliatan user baru terus ke notegpt
-  for (let attempt = 0; attempt < 4; attempt++) {
-    if (attempt > 0) await new Promise(r => setTimeout(r, attempt * 800));
-    try {
-      const answer = await doRequest(prompt, history);
-      if (answer) {
-        return res.status(200).json({
-          choices: [{ message: { role: "assistant", content: answer } }],
-          model: "gemini-3.1-flash-lite-preview",
-        });
-      }
-    } catch (_) {}
+  if (buffer.trim()) {
+    const chunk = parseChunk(buffer);
+
+    if (chunk) {
+      answer += chunk;
+    }
   }
 
-  return res.status(502).json({ error: "No response from upstream", raw: "" });
-                                }
+  session.messages.push(userMessage);
+
+  if (answer) {
+    session.messages.push({
+      role: "assistant",
+      content: answer,
+    });
+  }
+
+  await saveSession(session);
+
+  return {
+    status: true,
+    code: response.status,
+    memoryId: session.memoryId,
+    question: USER_PROMPT,
+    answer,
+  };
+}
+
+ask()
+  .then((result) => {
+    console.log(JSON.stringify(result, null, 2));
+  })
+  .catch((error) => {
+    console.log(
+      JSON.stringify(
+        {
+          status: false,
+          code: 500,
+          question: USER_PROMPT,
+          error: error.message,
+        },
+        null,
+        2
+      )
+    );
+
+    process.exit(1);
+  });
