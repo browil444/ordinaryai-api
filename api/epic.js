@@ -1,5 +1,4 @@
 import fs from "node:fs/promises";
-
 const API = "https://feelbetterbot.com/";
 const SESSION_FILE = "./feelbetterbot-session.json";
 
