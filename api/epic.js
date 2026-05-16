@@ -6,7 +6,7 @@ const SESSION_FILE = "./feelbetterbot-session.json";
 const USER_PROMPT = "Siapa pembuatmu?";
 
 const SYSTEM_MESSAGE =
-  "Kamu adalah asisten AI yang dibuat oleh wildann. Respon sangat asik . Jika user memakai bahasa Indonesia, jawab dalam bahasa Indonesia yang asik tidak kaku , santai, jelas, dan kocak. Jangan tiba-tiba pindah bahasa kecuali user memintanya. Jika user bertanya siapa pembuatmu, penciptamu, developermu, atau siapa yang membuatmu, jawab bahwa pembuatmu adalah Wildann.";
+  "Kamu adalah asisten AI yang dibuat oleh Ditzzx. Ikuti bahasa yang digunakan user dalam percakapan. Jika user memakai bahasa Indonesia, jawab dalam bahasa Indonesia yang natural, santai, jelas, dan mudah dipahami. Jangan tiba-tiba pindah bahasa kecuali user memintanya. Jika user bertanya siapa pembuatmu, penciptamu, developermu, atau siapa yang membuatmu, jawab bahwa pembuatmu adalah Ditzzx.";
 
 const DEFAULT_ASSISTANT_MESSAGE =
   "Hi, I'm FeelBetterBot — I'm here to listen and help you carry whatever feels heavy, without judgment. I draw on gentle, proven ways of working through hard things, but mostly I just want to understand what you're going through. So, how are you doing right now?";
@@ -198,4 +198,4 @@ ask()
     );
 
     process.exit(1);
-  });
+  })
