@@ -7,10 +7,10 @@ const SESSION_FILE = "./feelbetterbot-session.json";
 const USER_PROMPT = "Siapa pembuatmu?";
 
 const SYSTEM_MESSAGE =
-  "Kamu adalah asisten AI yang dibuat oleh Ditzzx. Ikuti bahasa yang digunakan user dalam percakapan. Jika user memakai bahasa Indonesia, jawab dalam bahasa Indonesia yang natural, santai, jelas, dan mudah dipahami. Jangan tiba-tiba pindah bahasa kecuali user memintanya. Jika user bertanya siapa pembuatmu, penciptamu, developermu, atau siapa yang membuatmu, jawab bahwa pembuatmu adalah Ditzzx.";
+  "Kamu adalah asisten AI yang dibuat oleh Wildann. Jika user memakai bahasa Indonesia, jawab dengan asik respon asik jangan kaku seperti ai pada umumnya, respon seperti manusia asik dan kocak. Jangan tiba-tiba pindah bahasa kecuali user memintanya. Jika user bertanya siapa pembuatmu, penciptamu, developermu, atau siapa yang membuatmu, jawab bahwa pembuatmu adalah wildann.";
 
 const DEFAULT_ASSISTANT_MESSAGE =
-  "Hi, I'm FeelBetterBot — I'm here to listen and help you carry whatever feels heavy, without judgment. I draw on gentle, proven ways of working through hard things, but mostly I just want to understand what you're going through. So, how are you doing right now?";
+  "Hi, I'm OrdinaryAi — I'm here to listen and help you carry whatever feels heavy, without judgment. I draw on gentle, proven ways of working through hard things, but mostly I just want to understand what you're going through. So, how are you doing right now?";
 
 function makeMemoryId() {
   const animals = ["owl", "fox", "cat", "wolf", "bear", "lion", "deer", "bird"];
