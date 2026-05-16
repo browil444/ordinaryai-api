@@ -1,12 +1,26 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 
-const API = "https://api.overchat.ai/v1/chat/completions";
-const SESSION_FILE = "./overchat-qwen-session.json";
+const API = "https://feelbetterbot.com/";
+const SESSION_FILE = "./feelbetterbot-session.json";
 
-const USER_PROMPT = "Halo bro gimana kabar mu";
-const MODEL = "alibaba/qwen3-next-80b-a3b-instruct";
-const PERSONA_ID = "qwen-3-landing";
+const USER_PROMPT = "Siapa pembuatmu?";
+
+const SYSTEM_MESSAGE =
+  "Kamu adalah asisten AI yang dibuat oleh Ditzzx. Ikuti bahasa yang digunakan user dalam percakapan. Jika user memakai bahasa Indonesia, jawab dalam bahasa Indonesia yang natural, santai, jelas, dan mudah dipahami. Jangan tiba-tiba pindah bahasa kecuali user memintanya. Jika user bertanya siapa pembuatmu, penciptamu, developermu, atau siapa yang membuatmu, jawab bahwa pembuatmu adalah Ditzzx.";
+
+const DEFAULT_ASSISTANT_MESSAGE =
+  "Hi, I'm FeelBetterBot — I'm here to listen and help you carry whatever feels heavy, without judgment. I draw on gentle, proven ways of working through hard things, but mostly I just want to understand what you're going through. So, how are you doing right now?";
+
+function makeMemoryId() {
+  const animals = ["owl", "fox", "cat", "wolf", "bear", "lion", "deer", "bird"];
+  const words = ["safe", "calm", "soft", "kind", "warm", "bright", "gentle"];
+  const word = words[Math.floor(Math.random() * words.length)];
+  const animal = animals[Math.floor(Math.random() * animals.length)];
+  const number = Math.floor(1000 + Math.random() * 9000);
+
+  return `${word}-${animal}-${number}`;
+}
 
 async function loadSession() {
   try {
@@ -14,9 +28,13 @@ async function loadSession() {
     return JSON.parse(raw);
   } catch {
     return {
-      chatId: crypto.randomUUID(),
-      deviceId: crypto.randomUUID(),
-      messages: [],
+      memoryId: makeMemoryId(),
+      messages: [
+        {
+          role: "assistant",
+          content: DEFAULT_ASSISTANT_MESSAGE,
+        },
+      ],
     };
   }
 }
@@ -25,49 +43,69 @@ async function saveSession(session) {
   await fs.writeFile(SESSION_FILE, JSON.stringify(session, null, 2), "utf8");
 }
 
+function parseChunk(line) {
+  let data = line.trim();
+
+  if (!data) return "";
+  if (data === "[DONE]") return "";
+
+  if (data.startsWith("data:")) {
+    data = data.slice(5).trim();
+  }
+
+  if (!data || data === "[DONE]") return "";
+
+  try {
+    const json = JSON.parse(data);
+
+    if (typeof json === "string") return json;
+    if (typeof json.content === "string") return json.content;
+    if (typeof json.text === "string") return json.text;
+    if (typeof json.delta === "string") return json.delta;
+    if (typeof json.message === "string") return json.message;
+    if (typeof json.response === "string") return json.response;
+    if (typeof json.answer === "string") return json.answer;
+
+    const openAiContent = json.choices?.[0]?.delta?.content;
+    if (typeof openAiContent === "string") return openAiContent;
+
+    return "";
+  } catch {
+    return data;
+  }
+}
+
 async function ask() {
   const session = await loadSession();
 
   const userMessage = {
-    id: crypto.randomUUID(),
     role: "user",
     content: USER_PROMPT,
   };
 
-  const systemMessage = {
-    id: crypto.randomUUID(),
-    role: "system",
-    content: "Ikuti bahasa user dan jawab dengan sangat asik dan kocak",
-  };
-
   const body = {
-    chatId: session.chatId,
-    model: MODEL,
-    messages: [...session.messages, userMessage, systemMessage],
-    personaId: PERSONA_ID,
-    frequency_penalty: 0,
-    max_tokens: 4000,
-    presence_penalty: 0,
-    stream: true,
-    temperature: 0.5,
-    top_p: 0.95,
+    messages: [
+      {
+        role: "system",
+        content: SYSTEM_MESSAGE,
+      },
+      ...session.messages,
+      userMessage,
+    ],
   };
 
   const headers = {
     "sec-ch-ua-platform": `"Android"`,
-    "x-device-uuid": session.deviceId,
-    "sec-ch-ua": `"Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"`,
-    "sec-ch-ua-mobile": "?1",
-    "x-device-language": "id-ID",
-    "x-device-platform": "web",
-    "x-device-version": "1.0.44",
     "user-agent":
       "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Mobile Safari/537.36",
-    accept: "*/*",
+    "sec-ch-ua": `"Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"`,
     "content-type": "application/json",
-    origin: "https://overchat.ai",
-    referer: "https://overchat.ai/",
+    "sec-ch-ua-mobile": "?1",
+    accept: "*/*",
+    origin: "https://feelbetterbot.com",
+    referer: "https://feelbetterbot.com/",
     "accept-language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
+    cookie: `feelbet-memory=${session.memoryId}`,
     priority: "u=1, i",
   };
 
@@ -83,9 +121,8 @@ async function ask() {
     return {
       status: false,
       code: response.status,
-      model: MODEL,
+      memoryId: session.memoryId,
       question: USER_PROMPT,
-      answer: "",
       error: text,
     };
   }
@@ -107,40 +144,37 @@ async function ask() {
     buffer = lines.pop() || "";
 
     for (const rawLine of lines) {
-      const line = rawLine.trim();
+      const chunk = parseChunk(rawLine);
 
-      if (!line.startsWith("data:")) continue;
-
-      const data = line.slice(5).trim();
-
-      if (!data || data === "[DONE]") continue;
-
-      try {
-        const json = JSON.parse(data);
-        const content = json.choices?.[0]?.delta?.content;
-
-        if (typeof content === "string") {
-          answer += content;
-        }
-      } catch {}
+      if (chunk) {
+        answer += chunk;
+      }
     }
   }
 
-  const assistantMessage = {
-    id: crypto.randomUUID(),
-    role: "assistant",
-    content: answer,
-  };
+  if (buffer.trim()) {
+    const chunk = parseChunk(buffer);
+
+    if (chunk) {
+      answer += chunk;
+    }
+  }
 
   session.messages.push(userMessage);
-  session.messages.push(assistantMessage);
+
+  if (answer) {
+    session.messages.push({
+      role: "assistant",
+      content: answer,
+    });
+  }
 
   await saveSession(session);
 
   return {
     status: true,
-    code: 200,
-    model: MODEL,
+    code: response.status,
+    memoryId: session.memoryId,
     question: USER_PROMPT,
     answer,
   };
@@ -156,9 +190,7 @@ ask()
         {
           status: false,
           code: 500,
-          model: MODEL,
           question: USER_PROMPT,
-          answer: "",
           error: error.message,
         },
         null,
