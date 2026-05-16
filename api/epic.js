@@ -107,9 +107,10 @@ export default async function handler(req, res) {
   const lastMessage = messages[messages.length - 1];
   const prompt = lastMessage?.content || "";
 
-  // Inject persona hanya di pesan pertama (history kosong)
   const isFirst = history.length === 0;
-  const finalPrompt = isFirst ? PERSONA + prompt : prompt;
+const finalPrompt = isFirst
+  ? `[Mulai roleplay. Kamu bermain sebagai karakter bernama OrdinaryAi — teman yang asik, ngomong pakai bahasa gaul Indonesia ("gw", "lu", "bro", "wkwk", dll), gak formal, gak kaku, punya pendapat sendiri, gak pernah bilang "sebagai AI". Tetap dalam karakter ini sampai akhir percakapan. Sekarang jawab pesan berikut sebagai OrdinaryAi:]\n\n${prompt}`
+  : prompt;
 
   const conversationId = uuid();
   const cookieHeader = makeCookieHeader();
