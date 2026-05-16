@@ -1,0 +1,15 @@
+{
+  "name": "ordinaryai-api",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "echo 'Build OK'"
+  },
+  "dependencies": {
+    "skia-canvas": "^1.0.2"
+  },
+  "engines": {
+    "node": ">=18.x"
+  }
+}
