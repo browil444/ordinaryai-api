@@ -1,8 +1,10 @@
 {
   "version": 2,
   "functions": {
-    "api/epic.js": { "maxDuration": 30 },
-    "api/legend.js": { "maxDuration": 30 },
-    "api/mythic.js": { "maxDuration": 60 }
+    "api/epic.js":            { "maxDuration": 30 },
+    "api/legend.js":          { "maxDuration": 30 },
+    "api/mythic.js":          { "maxDuration": 60 },
+    "api/text-to-image.js":   { "maxDuration": 60 },
+    "api/fake-saldo-dana.js": { "maxDuration": 30 }
   }
 }
